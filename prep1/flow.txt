@@ -1,0 +1,80 @@
+### Phase 1: The Foundation (Setup)
+
+1. **Check Arguments:** If `argc != 2`, write error and exit.
+2. **Create Socket:** Call `socket()`. On failure, call `fatal_error`.
+3. **Prepare Address:** Use `struct sockaddr_in`. Set to `127.0.0.1` and `htons(atoi(argv[1]))`.
+4. **Bind & Listen:** `bind()` the socket and start `listen()` with a backlog (128).
+5. **Initialize Sets:** Use `FD_ZERO` on your master `active` set, and add the server socket via `FD_SET`. Set `max_fd` to the server socket.
+
+---
+
+### Phase 2: The Infinite Loop (Select)
+
+1. **Copy Sets:** Copy `active` into `ready_read` and `ready_write`.
+2. **Wait for Activity:** Call `select($max\_fd + 1$, &ready_read, &ready_write, NULL, NULL)`.
+3. **Iterate FDs:** Loop from  to `max_fd`:
+* **Skip if not ready:** If `fd` is not in `ready_read`, `continue`.
+* **Case A: New Connection (fd == server_socket)**
+* `accept()` the new client.
+* Update `max_fd` if the new client FD is higher.
+* Assign a new ID and add to `active` set.
+* Initialize the client’s message buffer to `NULL` (or empty string).
+* **Broadcast:** "server: client %d just arrived\n".
+* `break` the inner loop to restart `select`.
+
+
+* **Case B: Client Activity (fd != server_socket)**
+* `recv()` data into a large temporary `buf_read`.
+* **If bytes <= 0 (Disconnected):**
+* **Broadcast:** "server: client %d just left\n".
+* `close(fd)`, remove from `active` set, and `free` their buffer.
+* `break` the inner loop.
+
+
+* **If bytes > 0 (Message Received):**
+* Null-terminate `buf_read`.
+* Join `buf_read` to the client's existing `msgs[fd]` buffer.
+* **Check for Newlines:** `while` there is a `\n` in `msgs[fd]`:
+1. Split the string at the `\n`.
+2. Format: "client %d: [extracted_line]\n".
+3. **Broadcast** the formatted message to all other clients.
+4. Shift the "leftover" text back into `msgs[fd]`.
+
+
+
+
+
+
+
+
+
+---
+
+### Phase 3: The Supporting Functions
+
+* **`send_to_all`:**
+* Loop  to `max_fd`.
+* If `fd` is in `ready_write` AND is not the `sender` AND is not the `server_socket`:
+* `send()` the message string.
+
+
+* **`str_join`:**
+* `malloc` a new string size of (old + new + 1).
+* `strcpy` old string, `strcat` new string.
+* `free` the old string and return the new one.
+
+
+* **`fatal_error`:**
+* `write` "Fatal error\n" to stderr (FD 2).
+* `exit(1)`.
+
+
+
+---
+
+### Quick Memory Tricks for the Exam
+
+* **`max_fd + 1`:** Select needs the *count* of bits to check, and since FDs start at 0, the count is always `highest_fd + 1`.
+* **The `break` rule:** Always `break` the loop after `accept` or `close`. It’s the safest way to prevent your loop from acting on a "stale" `fd_set`.
+* **Buffer Size:** Use `424242`. It’s a magic number from the subject that is plenty big enough for any test case.
+
